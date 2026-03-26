@@ -1,16 +1,16 @@
-# Evergreen Memory
+# 长期记忆
 
-> This file stores long-term facts and preferences that don't change day to day.
-> The agent reads this at the start of each session for context.
+> 这个文件存放那些不会每天变化的长期事实和偏好。
+> 智能体会在每次会话开始时读取它，以获取上下文。
 
-## User Preferences
+## 用户偏好
 
-- Prefers concise answers over verbose explanations
-- Timezone: Asia/Shanghai (UTC+8)
-- Primary language: Chinese, comfortable with English technical terms
+- 相比冗长解释，更偏好简洁回答
+- 时区：Asia/Shanghai（UTC+8）
+- 主要语言：中文，也能接受英文技术术语
 
-## Important Context
+## 重要背景
 
-- Working on an AI agent project
-- Interested in system architecture and design patterns
-- Values code quality and clean abstractions
+- 正在做一个 AI 智能体项目
+- 对系统架构和设计模式感兴趣
+- 重视代码质量和清晰的抽象

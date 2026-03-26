@@ -1,10 +1,10 @@
 ---
 name: example-skill
-description: A sample skill for demonstration
+description: 用于演示的示例技能
 invocation: /example
 ---
-# Example Skill
+# 示例技能
 
-When the user invokes /example, respond with a friendly greeting and explain that this is a demo skill loaded from the workspace skills directory.
+当用户调用 `/example` 时，用友好的问候进行回复，并说明这是一个从 `workspace/skills` 目录加载的演示技能。
 
-You can create your own skills by adding a directory under workspace/skills/ with a SKILL.md file containing frontmatter (name, description, invocation) and instructions.
+你可以在 `workspace/skills/` 下新增一个目录，并在其中放置包含 frontmatter（`name`、`description`、`invocation`）和指令内容的 `SKILL.md` 文件，以创建你自己的技能。

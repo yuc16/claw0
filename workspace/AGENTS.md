@@ -1,21 +1,20 @@
-# Agents
+# 智能体
 
-## Default Agent
+## 默认智能体
 
-The default agent handles all messages unless routing bindings direct
-traffic to a specific agent.
+默认智能体会处理所有消息，除非路由绑定把消息流量导向某个特定智能体。
 
-## Multi-Agent Setup
+## 多智能体设置
 
-In production OpenClaw, multiple agents can run simultaneously:
-- Each agent has its own workspace, sessions, and memory
-- Routing bindings determine which agent handles each message
-- Agents are isolated: they cannot read each other's sessions
+在生产版 OpenClaw 中，多个智能体可以同时运行：
+- 每个智能体都有自己的工作区、会话和记忆
+- 路由绑定决定每条消息由哪个智能体处理
+- 智能体之间彼此隔离：不能读取其他智能体的会话
 
-## Agent Communication
+## 智能体通信
 
-Agents do not communicate directly with each other.
-Coordination happens through:
-1. Shared workspace files (if configured)
-2. The routing layer (bindings can be updated at runtime)
-3. The human operator (via gateway API or CLI)
+智能体之间不会直接通信。
+协作通过以下方式进行：
+1. 共享工作区文件（如果已配置）
+2. 路由层（绑定可以在运行时更新）
+3. 人类操作员（通过 gateway API 或 CLI）

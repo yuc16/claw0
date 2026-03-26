@@ -76,17 +76,35 @@ s01 --> s02 --> s03 --> s04 --> s05
 git clone https://github.com/shareAI-lab/claw0.git && cd claw0
 
 # 2. 依存関係をインストール
-pip install -r requirements.txt
+uv sync
 
 # 3. 設定
 cp .env.example .env
-# .env を編集: ANTHROPIC_API_KEY と MODEL_ID を設定
+# .env を編集: 必要なら MODEL_ID を変更
 
-# 4. 任意のセクションを実行 (言語を選択)
-python sessions/ja/s01_agent_loop.py    # 日本語
-python sessions/en/s01_agent_loop.py    # English
-python sessions/zh/s01_agent_loop.py    # 中文
+# 4. ChatGPT Plus/Pro OAuth でログイン
+uv run python login_openai_codex.py
+
+# 5. 任意のセクションを実行 (言語を選択)
+uv run python sessions/ja/s01_agent_loop.py    # 日本語
+uv run python sessions/en/s01_agent_loop.py    # English
+uv run python sessions/zh/s01_agent_loop.py    # 中文
 ```
+
+## .env パラメータ
+
+- `MODEL_ID`: Codex に送るモデル名です。デフォルトは `gpt-5.4` です。既存の教材スクリプトに残っている Claude モデル名は、現在の GPT 設定へ自動的に吸収されます。
+- `OPENAI_CODEX_BASE_URL`: 任意。Codex エンドポイントを上書きします。独自ゲートウェイを使う場合以外は未設定のままで構いません。
+- `OPENAI_CODEX_ORIGINATOR`: 任意。送信リクエストに付ける識別タグです。デフォルトは `claw0` です。
+- `OPENAI_CODEX_AUTO_LOGIN`: 最初のモデル呼び出し時に対話型 OAuth ログインを自動開始してよいかを制御します。`1` で有効、`0` で手動ログイン必須です。
+- `OPENAI_CODEX_VERIFY_SSL`: HTTPS 証明書検証を制御します。通常は `1` のままにし、ローカル証明書ストアが壊れている場合のみ一時的に調整してください。
+- `TELEGRAM_BOT_TOKEN`: 任意。`s04_channels.py` で使う Telegram Bot トークンです。
+- `FEISHU_APP_ID`: 任意。`s04_channels.py` で使う Feishu/Lark アプリ ID です。
+- `FEISHU_APP_SECRET`: 任意。`s04_channels.py` で使う Feishu/Lark アプリシークレットです。
+- `FEISHU_DOMAIN`: 任意。Feishu ドメイン指定です。中国本土は `feishu`、国際版は `lark` を使います。
+- `HEARTBEAT_INTERVAL`: 任意。`s07_heartbeat_cron.py` のハートビート間隔で、単位は秒です。
+- `HEARTBEAT_ACTIVE_START`: 任意。ハートビート稼働時間帯の開始時刻です。
+- `HEARTBEAT_ACTIVE_END`: 任意。ハートビート稼働時間帯の終了時刻です。
 
 ## 学習パス
 
@@ -126,7 +144,9 @@ claw0/
   README.zh.md           Chinese README
   README.ja.md           Japanese README
   .env.example           設定テンプレート
-  requirements.txt       Python 依存関係
+  pyproject.toml         uv 依存設定
+  requirements.txt       pip 互換の依存一覧
+  login_openai_codex.py  ChatGPT Plus/Pro OAuth ログイン補助
   sessions/              全教学セッション (コード + ドキュメント)
     en/                  English
       s01_agent_loop.py  s01_agent_loop.md
@@ -150,18 +170,11 @@ claw0/
 ## 前提条件
 
 - Python 3.11+
-- Anthropic (または互換プロバイダー) の API キー
+- Codex OAuth に使える ChatGPT Plus または Pro アカウント
 
 ## 依存関係
 
-```
-anthropic>=0.39.0
-python-dotenv>=1.0.0
-websockets>=12.0
-croniter>=2.0.0
-python-telegram-bot>=21.0
-httpx>=0.27.0
-```
+依存関係は `pyproject.toml` を通して `uv` で管理します。`requirements.txt` は pip 互換のために残しています。
 
 ## 関連プロジェクト
 

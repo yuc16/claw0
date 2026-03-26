@@ -76,17 +76,35 @@ s01 --> s02 --> s03 --> s04 --> s05
 git clone https://github.com/shareAI-lab/claw0.git && cd claw0
 
 # 2. Install dependencies
-pip install -r requirements.txt
+uv sync
 
 # 3. Configure
 cp .env.example .env
-# Edit .env: set ANTHROPIC_API_KEY and MODEL_ID
+# Edit .env: set MODEL_ID if you want to override the default GPT model
 
-# 4. Run any section (pick your language)
-python sessions/en/s01_agent_loop.py    # English
-python sessions/zh/s01_agent_loop.py    # Chinese
-python sessions/ja/s01_agent_loop.py    # Japanese
+# 4. Login with ChatGPT Plus/Pro OAuth
+uv run python login_openai_codex.py
+
+# 5. Run any section (pick your language)
+uv run python sessions/en/s01_agent_loop.py    # English
+uv run python sessions/zh/s01_agent_loop.py    # Chinese
+uv run python sessions/ja/s01_agent_loop.py    # Japanese
 ```
+
+## .env Reference
+
+- `MODEL_ID`: The model name sent to Codex. Default is `gpt-5.4`. Legacy Claude names in old session files are automatically mapped to your configured GPT model.
+- `OPENAI_CODEX_BASE_URL`: Optional override for the Codex endpoint. Leave unset unless you know you need a custom gateway.
+- `OPENAI_CODEX_ORIGINATOR`: Optional request tag used to identify this project in outbound requests. Default is `claw0`.
+- `OPENAI_CODEX_AUTO_LOGIN`: Controls whether the first model call may trigger interactive OAuth login automatically. `1` means enabled, `0` means fail fast and require manual login first.
+- `OPENAI_CODEX_VERIFY_SSL`: Controls HTTPS certificate verification. Keep `1` unless your local certificate store is broken and you need a temporary workaround.
+- `TELEGRAM_BOT_TOKEN`: Optional Telegram bot token used by `s04_channels.py`.
+- `FEISHU_APP_ID`: Optional Feishu/Lark app id used by `s04_channels.py`.
+- `FEISHU_APP_SECRET`: Optional Feishu/Lark app secret used by `s04_channels.py`.
+- `FEISHU_DOMAIN`: Optional Feishu domain selector. Use `feishu` for mainland China, `lark` for international.
+- `HEARTBEAT_INTERVAL`: Optional heartbeat interval in seconds for `s07_heartbeat_cron.py`.
+- `HEARTBEAT_ACTIVE_START`: Optional start hour for heartbeat active window.
+- `HEARTBEAT_ACTIVE_END`: Optional end hour for heartbeat active window.
 
 ## Learning Path
 
@@ -125,7 +143,9 @@ claw0/
   README.zh.md           Chinese README
   README.ja.md           Japanese README
   .env.example           Configuration template
-  requirements.txt       Python dependencies
+  pyproject.toml         uv dependency configuration
+  requirements.txt       pip compatibility dependencies
+  login_openai_codex.py  ChatGPT Plus/Pro OAuth login helper
   sessions/              All teaching sessions (code + docs)
     en/                  English
       s01_agent_loop.py  s01_agent_loop.md
@@ -149,18 +169,11 @@ Each language folder is self-contained: runnable Python code + documentation sid
 ## Prerequisites
 
 - Python 3.11+
-- An API key for Anthropic (or compatible provider)
+- A ChatGPT Plus or Pro account for Codex OAuth
 
 ## Dependencies
 
-```
-anthropic>=0.39.0
-python-dotenv>=1.0.0
-websockets>=12.0
-croniter>=2.0.0
-python-telegram-bot>=21.0
-httpx>=0.27.0
-```
+Managed by `uv` via `pyproject.toml`. `requirements.txt` is kept for pip-compatible installs.
 
 ## Related Projects
 

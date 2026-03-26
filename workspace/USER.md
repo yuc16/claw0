@@ -1,10 +1,9 @@
-# User Context
+# 用户上下文
 
-This file is loaded into the agent's system prompt to provide
-user-specific context that doesn't fit into MEMORY.md.
+这个文件会被加载进智能体的 system prompt，用来提供那些不适合写进 `MEMORY.md` 的用户专属上下文。
 
-## Notes
+## 说明
 
-- This file is optional. Delete it if not needed.
-- Use MEMORY.md for facts the agent should remember long-term.
-- Use this file for session-level context or instructions.
+- 这个文件是可选的，不需要时可以删除。
+- 那些需要长期记住的事实，请写入 `MEMORY.md`。
+- 这个文件更适合放会话级上下文或额外指令。

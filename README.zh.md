@@ -76,17 +76,35 @@ s01 --> s02 --> s03 --> s04 --> s05
 git clone https://github.com/shareAI-lab/claw0.git && cd claw0
 
 # 2. 安装依赖
-pip install -r requirements.txt
+uv sync
 
 # 3. 配置
 cp .env.example .env
-# 编辑 .env: 填入 ANTHROPIC_API_KEY 和 MODEL_ID
+# 编辑 .env: 如有需要可修改 MODEL_ID
 
-# 4. 运行任意章节 (选择你的语言)
-python sessions/zh/s01_agent_loop.py    # 中文
-python sessions/en/s01_agent_loop.py    # English
-python sessions/ja/s01_agent_loop.py    # Japanese
+# 4. 用 ChatGPT Plus/Pro 账号登录 OAuth
+uv run python login_openai_codex.py
+
+# 5. 运行任意章节 (选择你的语言)
+uv run python sessions/zh/s01_agent_loop.py    # 中文
+uv run python sessions/en/s01_agent_loop.py    # English
+uv run python sessions/ja/s01_agent_loop.py    # Japanese
 ```
+
+## .env 参数说明
+
+- `MODEL_ID`: 发送给 Codex 的模型名，默认是 `gpt-5.4`。旧教学脚本里写死的 Claude 模型名会自动映射到你当前配置的 GPT 模型。
+- `OPENAI_CODEX_BASE_URL`: 可选，用来覆盖默认 Codex 接口地址。除非你明确要接自定义网关，否则不要改。
+- `OPENAI_CODEX_ORIGINATOR`: 可选，请求来源标记，默认是 `claw0`。
+- `OPENAI_CODEX_AUTO_LOGIN`: 控制第一次模型调用时是否允许自动拉起交互式 OAuth 登录。`1` 表示开启，`0` 表示不自动登录，要求先手动执行登录脚本。
+- `OPENAI_CODEX_VERIFY_SSL`: 控制 HTTPS 证书校验。正常情况下保持 `1`，只有本机证书链异常时才临时调整。
+- `TELEGRAM_BOT_TOKEN`: 可选，`s04_channels.py` 的 Telegram 机器人 token。
+- `FEISHU_APP_ID`: 可选，`s04_channels.py` 的飞书/Lark 应用 ID。
+- `FEISHU_APP_SECRET`: 可选，`s04_channels.py` 的飞书/Lark 应用密钥。
+- `FEISHU_DOMAIN`: 可选，飞书域名选择。国内用 `feishu`，国际版用 `lark`。
+- `HEARTBEAT_INTERVAL`: 可选，`s07_heartbeat_cron.py` 的心跳间隔，单位秒。
+- `HEARTBEAT_ACTIVE_START`: 可选，心跳活跃时间窗口的开始小时。
+- `HEARTBEAT_ACTIVE_END`: 可选，心跳活跃时间窗口的结束小时。
 
 ## 学习路径
 
@@ -125,7 +143,9 @@ claw0/
   README.zh.md           Chinese README
   README.ja.md           Japanese README
   .env.example           配置模板
-  requirements.txt       Python 依赖
+  pyproject.toml         uv 依赖配置
+  requirements.txt       pip 兼容依赖列表
+  login_openai_codex.py  ChatGPT Plus/Pro OAuth 登录脚本
   sessions/              所有教学章节 (代码 + 文档)
     en/                  English
       s01_agent_loop.py  s01_agent_loop.md
@@ -149,18 +169,11 @@ claw0/
 ## 前置要求
 
 - Python 3.11+
-- Anthropic (或兼容服务商) 的 API key
+- 可用 ChatGPT Plus 或 Pro 的账号（用于 Codex OAuth）
 
 ## 依赖
 
-```
-anthropic>=0.39.0
-python-dotenv>=1.0.0
-websockets>=12.0
-croniter>=2.0.0
-python-telegram-bot>=21.0
-httpx>=0.27.0
-```
+使用 `pyproject.toml` 由 `uv` 管理。`requirements.txt` 仅保留给 pip 兼容安装。
 
 ## 相关项目
 

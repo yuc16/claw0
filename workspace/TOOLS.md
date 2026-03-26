@@ -1,26 +1,26 @@
-# Tools Guide
+# 工具指南
 
-## Available Tools
+## 可用工具
 
-Your tools depend on which section you are running. Common tools include:
+你能使用哪些工具，取决于当前运行的是哪个章节。常见工具包括：
 
-### File Tools
-- **read_file**: Read file contents within the workspace
-- **write_file**: Write content to a file (creates parent directories)
-- **edit_file**: Replace exact text in a file (old_string must be unique)
-- **list_directory**: List files and directories
+### 文件工具
+- **read_file**：读取工作区内文件内容
+- **write_file**：向文件写入内容（会自动创建父目录）
+- **edit_file**：替换文件中的精确文本（`old_string` 必须唯一）
+- **list_directory**：列出文件和目录
 
-### Memory Tools
-- **memory_write**: Store important information for later recall
-- **memory_search**: Search through stored memories by keyword
+### 记忆工具
+- **memory_write**：存储重要信息，供之后回忆
+- **memory_search**：按关键词搜索已存储的记忆
 
-### System Tools
-- **bash**: Execute shell commands (with safety checks)
-- **get_current_time**: Get current date and time
+### 系统工具
+- **bash**：执行 shell 命令（带安全检查）
+- **get_current_time**：获取当前日期和时间
 
-## Usage Guidelines
+## 使用准则
 
-- Always read a file before editing it
-- Use memory_write proactively when users share preferences, facts, or decisions
-- Use memory_search before answering questions about prior conversations
-- Keep tool outputs concise -- the model context has limits
+- 编辑文件前总是先读文件
+- 当用户分享偏好、事实或决定时，主动使用 `memory_write`
+- 在回答与过往对话相关的问题前，先使用 `memory_search`
+- 保持工具输出简洁，因为模型上下文容量有限
