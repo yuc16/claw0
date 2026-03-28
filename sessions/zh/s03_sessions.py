@@ -211,6 +211,35 @@ class SessionStore:
             },
         )
 
+    def replace_session_messages(self, messages: list[dict]) -> None:
+        """
+        用新的 messages 全量覆盖当前 session。
+        覆盖后，下次读取 session 时只会看到新的 compact 结果，不再保留旧历史。
+        """
+        if not self.current_session_id:
+            return
+
+        path = self._session_path(self.current_session_id)
+        records = [
+            {
+                "type": msg["role"],
+                "content": msg.get("content", ""),
+                "ts": time.time(),
+            }
+            for msg in messages
+        ]
+
+        with open(path, "w", encoding="utf-8") as f:
+            for record in records:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+        if self.current_session_id in self._index:
+            self._index[self.current_session_id]["last_active"] = datetime.now(
+                timezone.utc
+            ).isoformat()
+            self._index[self.current_session_id]["message_count"] = len(records)
+            self._save_index()
+
     def append_transcript(self, session_id: str, record: dict) -> None:
         path = self._session_path(session_id)
         with open(path, "a", encoding="utf-8") as f:
@@ -411,24 +440,14 @@ class ContextGuard:
         self, messages: list[dict], api_client: Anthropic, model: str
     ) -> list[dict]:
         """
-        将前 50% 的消息压缩为 LLM 生成的摘要。
-        保留最后 N 条消息 (N = max(4, 总数的 20%)) 不变。
+        将全部消息压缩为 LLM 生成的摘要。
+        压缩后只保留“摘要 + 确认摘要已读”的两条消息，
+        避免 tool_use / tool_result 调用链被切断。
         """
-        total = len(messages)
-        if total <= 4:
+        if not messages:
             return messages
 
-        keep_count = max(4, int(total * 0.2))
-        compress_count = max(2, int(total * 0.5))
-        compress_count = min(compress_count, total - keep_count)
-
-        if compress_count < 2:
-            return messages
-
-        old_messages = messages[:compress_count]
-        recent_messages = messages[compress_count:]
-
-        old_text = _serialize_messages_for_summary(old_messages)
+        old_text = _serialize_messages_for_summary(messages)
 
         summary_prompt = (
             "Summarize the following conversation concisely, "
@@ -450,12 +469,12 @@ class ContextGuard:
                     summary_text += block.text
 
             print_session(
-                f"  [compact] {len(old_messages)} messages -> summary "
+                f"  [compact] {len(messages)} messages -> summary "
                 f"({len(summary_text)} chars)"
             )
         except Exception as exc:
-            print_warn(f"  [compact] Summary failed ({exc}), dropping old messages")
-            return recent_messages
+            print_warn(f"  [compact] Summary failed ({exc}), keeping original messages")
+            return messages
 
         compacted = [
             {
@@ -472,7 +491,6 @@ class ContextGuard:
                 ],
             },
         ]
-        compacted.extend(recent_messages)
         return compacted
 
     def _truncate_large_tool_results(self, messages: list[dict]) -> list[dict]:
@@ -588,7 +606,10 @@ def tool_bash(command: str, timeout: int = 30) -> str:
         if result.returncode != 0:
             output += f"\n[exit code: {result.returncode}]"
         if len(output) > MAX_TOOL_OUTPUT:
-            return output[:MAX_TOOL_OUTPUT] + f"\n... [truncated, {len(output)} total chars]"
+            return (
+                output[:MAX_TOOL_OUTPUT]
+                + f"\n... [truncated, {len(output)} total chars]"
+            )
         return output if output else "[no output]"
     except subprocess.TimeoutExpired:
         return f"Error: Command timed out after {timeout}s"
@@ -725,6 +746,21 @@ def process_tool_call(tool_name: str, tool_input: dict) -> str:
         return f"Error: {tool_name} failed: {exc}"
 
 
+def _extract_compact_summary(messages: list[dict]) -> str:
+    """从 compact 后的 messages 中提取摘要文本，用于预览。"""
+    if not messages:
+        return ""
+    first = messages[0]
+    content = first.get("content", "")
+    if (
+        first.get("role") == "user"
+        and isinstance(content, str)
+        and content.startswith("[Previous conversation summary]\n")
+    ):
+        return content.split("\n", 1)[1]
+    return ""
+
+
 # ---------------------------------------------------------------------------
 # REPL 命令
 # ---------------------------------------------------------------------------
@@ -805,6 +841,17 @@ def handle_repl_command(
         print_session("  Compacting history...")
         new_messages = guard.compact_history(messages, client, MODEL_ID)
         print_session(f"  {len(messages)} -> {len(new_messages)} messages")
+        summary_preview = _extract_compact_summary(new_messages)
+        if summary_preview:
+            if len(summary_preview) > 1200:
+                summary_preview = (
+                    summary_preview[:1200]
+                    + f"\n... [summary truncated, {len(summary_preview)} total chars]"
+                )
+            print_session("  Compacted summary preview:")
+            print(f"{MAGENTA}{summary_preview}{RESET}")
+        store.replace_session_messages(new_messages)
+        print_session("  Session transcript replaced with compacted messages.")
         return True, new_messages
 
     elif cmd == "/help":
