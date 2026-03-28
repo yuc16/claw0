@@ -44,6 +44,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 from anthropic import Anthropic
+import readline
 
 # ---------------------------------------------------------------------------
 # 配置
@@ -65,7 +66,7 @@ SYSTEM_PROMPT = (
 )
 
 # 工具输出最大字符数 -- 防止超大输出撑爆上下文
-MAX_TOOL_OUTPUT = 50000
+MAX_TOOL_OUTPUT = 5000000000
 
 # 工作目录 -- 所有文件操作相对于此目录, 防止路径穿越
 WORKDIR = Path.cwd()
@@ -152,7 +153,9 @@ def tool_bash(command: str, timeout: int = 30) -> str:
         if result.stdout:
             output += result.stdout
         if result.stderr:
-            output += ("\n--- stderr ---\n" + result.stderr) if output else result.stderr
+            output += (
+                ("\n--- stderr ---\n" + result.stderr) if output else result.stderr
+            )
         if result.returncode != 0:
             output += f"\n[exit code: {result.returncode}]"
         return truncate(output) if output else "[no output]"
@@ -392,10 +395,12 @@ def agent_loop() -> None:
             break
 
         # --- Step 2: 追加 user 消息 ---
-        messages.append({
-            "role": "user",
-            "content": user_input,
-        })
+        messages.append(
+            {
+                "role": "user",
+                "content": user_input,
+            }
+        )
 
         # --- Step 3: Agent 内循环 ---
         # 模型可能连续调用多个工具才最终给出文本回复.
@@ -419,10 +424,12 @@ def agent_loop() -> None:
                 break
 
             # 追加 assistant 回复到历史
-            messages.append({
-                "role": "assistant",
-                "content": response.content,
-            })
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": response.content,
+                }
+            )
 
             # --- 检查 stop_reason ---
             if response.stop_reason == "end_turn":
@@ -447,18 +454,22 @@ def agent_loop() -> None:
                     # 执行工具
                     result = process_tool_call(block.name, block.input)
 
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": result,
-                    })
+                    tool_results.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": result,
+                        }
+                    )
 
                 # 把所有工具结果作为一条 user 消息追加
                 # (Anthropic API 要求 tool_result 在 user 角色中)
-                messages.append({
-                    "role": "user",
-                    "content": tool_results,
-                })
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": tool_results,
+                    }
+                )
 
                 # 继续内循环 -- 模型会看到工具结果并决定下一步
                 continue
@@ -478,6 +489,7 @@ def agent_loop() -> None:
 # ---------------------------------------------------------------------------
 # 入口
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     if not os.getenv("ANTHROPIC_API_KEY"):

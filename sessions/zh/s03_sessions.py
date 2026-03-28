@@ -38,6 +38,7 @@ import time
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Any
+import readline
 
 from dotenv import load_dotenv
 from anthropic import Anthropic
@@ -107,6 +108,7 @@ def print_session(text: str) -> None:
 # 安全路径辅助函数
 # ---------------------------------------------------------------------------
 
+
 def safe_path(raw: str) -> Path:
     """解析路径, 阻止逃逸到 WORKSPACE_DIR 之外。"""
     target = (WORKSPACE_DIR / raw).resolve()
@@ -173,39 +175,49 @@ class SessionStore:
     def save_turn(self, role: str, content: Any) -> None:
         if not self.current_session_id:
             return
-        self.append_transcript(self.current_session_id, {
-            "type": role,
-            "content": content,
-            "ts": time.time(),
-        })
+        self.append_transcript(
+            self.current_session_id,
+            {
+                "type": role,
+                "content": content,
+                "ts": time.time(),
+            },
+        )
 
-    def save_tool_result(self, tool_use_id: str, name: str,
-                         tool_input: dict, result: str) -> None:
+    def save_tool_result(
+        self, tool_use_id: str, name: str, tool_input: dict, result: str
+    ) -> None:
         if not self.current_session_id:
             return
         ts = time.time()
-        self.append_transcript(self.current_session_id, {
-            "type": "tool_use",
-            "tool_use_id": tool_use_id,
-            "name": name,
-            "input": tool_input,
-            "ts": ts,
-        })
-        self.append_transcript(self.current_session_id, {
-            "type": "tool_result",
-            "tool_use_id": tool_use_id,
-            "content": result,
-            "ts": ts,
-        })
+        self.append_transcript(
+            self.current_session_id,
+            {
+                "type": "tool_use",
+                "tool_use_id": tool_use_id,
+                "name": name,
+                "input": tool_input,
+                "ts": ts,
+            },
+        )
+        self.append_transcript(
+            self.current_session_id,
+            {
+                "type": "tool_result",
+                "tool_use_id": tool_use_id,
+                "content": result,
+                "ts": ts,
+            },
+        )
 
     def append_transcript(self, session_id: str, record: dict) -> None:
         path = self._session_path(session_id)
         with open(path, "a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
         if session_id in self._index:
-            self._index[session_id]["last_active"] = (
-                datetime.now(timezone.utc).isoformat()
-            )
+            self._index[session_id]["last_active"] = datetime.now(
+                timezone.utc
+            ).isoformat()
             self._index[session_id]["message_count"] += 1
             self._save_index()
 
@@ -232,19 +244,23 @@ class SessionStore:
             rtype = record.get("type")
 
             if rtype == "user":
-                messages.append({
-                    "role": "user",
-                    "content": record["content"],
-                })
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": record["content"],
+                    }
+                )
 
             elif rtype == "assistant":
                 content = record["content"]
                 if isinstance(content, str):
                     content = [{"type": "text", "text": content}]
-                messages.append({
-                    "role": "assistant",
-                    "content": content,
-                })
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": content,
+                    }
+                )
 
             elif rtype == "tool_use":
                 block = {
@@ -263,10 +279,12 @@ class SessionStore:
                             block,
                         ]
                 else:
-                    messages.append({
-                        "role": "assistant",
-                        "content": [block],
-                    })
+                    messages.append(
+                        {
+                            "role": "assistant",
+                            "content": [block],
+                        }
+                    )
 
             elif rtype == "tool_result":
                 result_block = {
@@ -275,17 +293,22 @@ class SessionStore:
                     "content": record["content"],
                 }
                 # 将连续的 tool_result 合并到同一个 user 消息中
-                if (messages and messages[-1]["role"] == "user"
-                        and isinstance(messages[-1]["content"], list)
-                        and messages[-1]["content"]
-                        and isinstance(messages[-1]["content"][0], dict)
-                        and messages[-1]["content"][0].get("type") == "tool_result"):
+                if (
+                    messages
+                    and messages[-1]["role"] == "user"
+                    and isinstance(messages[-1]["content"], list)
+                    and messages[-1]["content"]
+                    and isinstance(messages[-1]["content"][0], dict)
+                    and messages[-1]["content"][0].get("type") == "tool_result"
+                ):
                     messages[-1]["content"].append(result_block)
                 else:
-                    messages.append({
-                        "role": "user",
-                        "content": [result_block],
-                    })
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": [result_block],
+                        }
+                    )
 
         return messages
 
@@ -366,9 +389,7 @@ class ContextGuard:
                         if hasattr(block, "text"):
                             total += self.estimate_tokens(block.text)
                         elif hasattr(block, "input"):
-                            total += self.estimate_tokens(
-                                json.dumps(block.input)
-                            )
+                            total += self.estimate_tokens(json.dumps(block.input))
         return total
 
     def truncate_tool_result(self, result: str, max_fraction: float = 0.3) -> str:
@@ -380,10 +401,14 @@ class ContextGuard:
         if cut <= 0:
             cut = max_chars
         head = result[:cut]
-        return head + f"\n\n[... truncated ({len(result)} chars total, showing first {len(head)}) ...]"
+        return (
+            head
+            + f"\n\n[... truncated ({len(result)} chars total, showing first {len(head)}) ...]"
+        )
 
-    def compact_history(self, messages: list[dict],
-                        api_client: Anthropic, model: str) -> list[dict]:
+    def compact_history(
+        self, messages: list[dict], api_client: Anthropic, model: str
+    ) -> list[dict]:
         """
         将前 50% 的消息压缩为 LLM 生成的摘要。
         保留最后 N 条消息 (N = max(4, 总数的 20%)) 不变。
@@ -438,7 +463,12 @@ class ContextGuard:
             },
             {
                 "role": "assistant",
-                "content": [{"type": "text", "text": "Understood, I have the context from our previous conversation."}],
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Understood, I have the context from our previous conversation.",
+                    }
+                ],
             },
         ]
         compacted.extend(recent_messages)
@@ -452,13 +482,13 @@ class ContextGuard:
             if isinstance(content, list):
                 new_blocks = []
                 for block in content:
-                    if (isinstance(block, dict)
-                            and block.get("type") == "tool_result"
-                            and isinstance(block.get("content"), str)):
+                    if (
+                        isinstance(block, dict)
+                        and block.get("type") == "tool_result"
+                        and isinstance(block.get("content"), str)
+                    ):
                         block = dict(block)
-                        block["content"] = self.truncate_tool_result(
-                            block["content"]
-                        )
+                        block["content"] = self.truncate_tool_result(block["content"])
                     new_blocks.append(block)
                 result.append({"role": msg["role"], "content": new_blocks})
             else:
@@ -500,7 +530,7 @@ class ContextGuard:
 
             except Exception as exc:
                 error_str = str(exc).lower()
-                is_overflow = ("context" in error_str or "token" in error_str)
+                is_overflow = "context" in error_str or "token" in error_str
 
                 if not is_overflow or attempt >= max_retries:
                     raise
@@ -540,7 +570,10 @@ def tool_read_file(file_path: str) -> str:
             return f"Error: Not a file: {file_path}"
         content = target.read_text(encoding="utf-8")
         if len(content) > MAX_TOOL_OUTPUT:
-            return content[:MAX_TOOL_OUTPUT] + f"\n... [truncated, {len(content)} total chars]"
+            return (
+                content[:MAX_TOOL_OUTPUT]
+                + f"\n... [truncated, {len(content)} total chars]"
+            )
         return content
     except ValueError as exc:
         return str(exc)
@@ -641,6 +674,7 @@ def process_tool_call(tool_name: str, tool_input: dict) -> str:
 # REPL 命令
 # ---------------------------------------------------------------------------
 
+
 def handle_repl_command(
     command: str,
     store: SessionStore,
@@ -658,7 +692,9 @@ def handle_repl_command(
     if cmd == "/new":
         label = arg or ""
         sid = store.create_session(label)
-        print_session(f"  Created new session: {sid}" + (f" ({label})" if label else ""))
+        print_session(
+            f"  Created new session: {sid}" + (f" ({label})" if label else "")
+        )
         return True, []
 
     elif cmd == "/list":
@@ -674,10 +710,7 @@ def handle_repl_command(
             label_str = f" ({label})" if label else ""
             count = meta.get("message_count", 0)
             last = meta.get("last_active", "?")[:19]
-            print_info(
-                f"    {sid}{label_str}  "
-                f"msgs={count}  last={last}{active}"
-            )
+            print_info(f"    {sid}{label_str}  " f"msgs={count}  last={last}{active}")
         return True, messages
 
     elif cmd == "/switch":
@@ -685,9 +718,7 @@ def handle_repl_command(
             print_warn("  Usage: /switch <session_id>")
             return True, messages
         target_id = arg.strip()
-        matched = [
-            sid for sid in store._index if sid.startswith(target_id)
-        ]
+        matched = [sid for sid in store._index if sid.startswith(target_id)]
         if len(matched) == 0:
             print_warn(f"  Session not found: {target_id}")
             return True, messages
@@ -785,17 +816,17 @@ def agent_loop() -> None:
 
         # --- REPL 命令 ---
         if user_input.startswith("/"):
-            handled, messages = handle_repl_command(
-                user_input, store, guard, messages
-            )
+            handled, messages = handle_repl_command(user_input, store, guard, messages)
             if handled:
                 continue
 
         # --- 追加用户消息 ---
-        messages.append({
-            "role": "user",
-            "content": user_input,
-        })
+        messages.append(
+            {
+                "role": "user",
+                "content": user_input,
+            }
+        )
         store.save_turn("user", user_input)
 
         # --- 内层循环: 工具调用链 ---
@@ -816,10 +847,12 @@ def agent_loop() -> None:
                     messages.pop()
                 break
 
-            messages.append({
-                "role": "assistant",
-                "content": response.content,
-            })
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": response.content,
+                }
+            )
 
             # 将内容块序列化为 JSONL 存储格式
             serialized_content = []
@@ -827,12 +860,14 @@ def agent_loop() -> None:
                 if hasattr(block, "text"):
                     serialized_content.append({"type": "text", "text": block.text})
                 elif block.type == "tool_use":
-                    serialized_content.append({
-                        "type": "tool_use",
-                        "id": block.id,
-                        "name": block.name,
-                        "input": block.input,
-                    })
+                    serialized_content.append(
+                        {
+                            "type": "tool_use",
+                            "id": block.id,
+                            "name": block.name,
+                            "input": block.input,
+                        }
+                    )
             store.save_turn("assistant", serialized_content)
 
             if response.stop_reason == "end_turn":
@@ -850,19 +885,21 @@ def agent_loop() -> None:
                     if block.type != "tool_use":
                         continue
                     result = process_tool_call(block.name, block.input)
-                    store.save_tool_result(
-                        block.id, block.name, block.input, result
+                    store.save_tool_result(block.id, block.name, block.input, result)
+                    tool_results.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": result,
+                        }
                     )
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": result,
-                    })
 
-                messages.append({
-                    "role": "user",
-                    "content": tool_results,
-                })
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": tool_results,
+                    }
+                )
                 continue
 
             else:
@@ -879,6 +916,7 @@ def agent_loop() -> None:
 # ---------------------------------------------------------------------------
 # 入口
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     if not os.getenv("ANTHROPIC_API_KEY"):

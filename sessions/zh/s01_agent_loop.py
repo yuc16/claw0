@@ -104,10 +104,12 @@ def agent_loop() -> None:
             break
 
         # --- 追加到历史 ---
-        messages.append({
-            "role": "user",
-            "content": user_input,
-        })
+        messages.append(
+            {
+                "role": "user",
+                "content": user_input,
+            }
+        )
 
         # --- 调用 LLM ---
         try:
@@ -131,18 +133,22 @@ def agent_loop() -> None:
 
             print_assistant(assistant_text)
 
-            messages.append({
-                "role": "assistant",
-                "content": response.content,
-            })
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": response.content,
+                }
+            )
 
         elif response.stop_reason == "tool_use":
             print_info("[stop_reason=tool_use] 本节没有可用工具.")
             print_info("参见 s02_tool_use.py 了解工具支持.")
-            messages.append({
-                "role": "assistant",
-                "content": response.content,
-            })
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": response.content,
+                }
+            )
 
         else:
             print_info(f"[stop_reason={response.stop_reason}]")
@@ -152,15 +158,18 @@ def agent_loop() -> None:
                     assistant_text += block.text
             if assistant_text:
                 print_assistant(assistant_text)
-            messages.append({
-                "role": "assistant",
-                "content": response.content,
-            })
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": response.content,
+                }
+            )
 
 
 # ---------------------------------------------------------------------------
 # 入口
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     if not os.getenv("ANTHROPIC_API_KEY"):
