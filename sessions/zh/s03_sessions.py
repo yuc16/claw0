@@ -35,6 +35,7 @@ import sys
 import json
 import uuid
 import time
+import subprocess
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Any
@@ -57,7 +58,7 @@ client = Anthropic(
 
 SYSTEM_PROMPT = (
     "You are a helpful AI assistant with access to tools.\n"
-    "Use tools to help the user with file and time queries.\n"
+    "Use tools to help the user with file, shell, and time queries.\n"
     "Be concise. If a session has prior context, use it."
 )
 
@@ -560,6 +561,41 @@ class ContextGuard:
 # ---------------------------------------------------------------------------
 
 
+def tool_bash(command: str, timeout: int = 30) -> str:
+    """执行 shell 命令并返回输出。"""
+    dangerous = ["rm -rf /", "mkfs", "> /dev/sd", "dd if="]
+    for pattern in dangerous:
+        if pattern in command:
+            return f"Error: Refused to run dangerous command containing '{pattern}'"
+
+    print_tool("bash", command)
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd=str(WORKSPACE_DIR),
+        )
+        output = ""
+        if result.stdout:
+            output += result.stdout
+        if result.stderr:
+            output += (
+                ("\n--- stderr ---\n" + result.stderr) if output else result.stderr
+            )
+        if result.returncode != 0:
+            output += f"\n[exit code: {result.returncode}]"
+        if len(output) > MAX_TOOL_OUTPUT:
+            return output[:MAX_TOOL_OUTPUT] + f"\n... [truncated, {len(output)} total chars]"
+        return output if output else "[no output]"
+    except subprocess.TimeoutExpired:
+        return f"Error: Command timed out after {timeout}s"
+    except Exception as exc:
+        return f"Error: {exc}"
+
+
 def tool_read_file(file_path: str) -> str:
     print_tool("read_file", file_path)
     try:
@@ -613,6 +649,24 @@ def tool_get_current_time() -> str:
 
 TOOLS = [
     {
+        "name": "bash",
+        "description": "Run a shell command inside the workspace directory and return its output.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "The shell command to execute.",
+                },
+                "timeout": {
+                    "type": "integer",
+                    "description": "Timeout in seconds. Default 30.",
+                },
+            },
+            "required": ["command"],
+        },
+    },
+    {
         "name": "read_file",
         "description": "Read the contents of a file under the workspace directory.",
         "input_schema": {
@@ -652,6 +706,7 @@ TOOLS = [
 ]
 
 TOOL_HANDLERS: dict[str, Any] = {
+    "bash": tool_bash,
     "read_file": tool_read_file,
     "list_directory": tool_list_directory,
     "get_current_time": tool_get_current_time,
