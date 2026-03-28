@@ -27,6 +27,7 @@ from anthropic import Anthropic
 
 try:
     import httpx
+
     HAS_HTTPX = True
 except ImportError:
     HAS_HTTPX = False
@@ -55,7 +56,13 @@ SYSTEM_PROMPT = (
 # ---------------------------------------------------------------------------
 # ANSI 颜色
 # ---------------------------------------------------------------------------
-CYAN, GREEN, YELLOW, DIM, RESET = "\033[36m", "\033[32m", "\033[33m", "\033[2m", "\033[0m"
+CYAN, GREEN, YELLOW, DIM, RESET = (
+    "\033[36m",
+    "\033[32m",
+    "\033[33m",
+    "\033[2m",
+    "\033[0m",
+)
 BOLD, RED, BLUE = "\033[1m", "\033[31m", "\033[34m"
 
 
@@ -63,22 +70,28 @@ def print_assistant(text: str, ch: str = "cli") -> None:
     prefix = f"[{ch}] " if ch != "cli" else ""
     print(f"\n{GREEN}{BOLD}Assistant:{RESET} {prefix}{text}\n")
 
+
 def print_tool(name: str, detail: str) -> None:
     print(f"  {DIM}[tool: {name}] {detail}{RESET}")
+
 
 def print_info(text: str) -> None:
     print(f"{DIM}{text}{RESET}")
 
+
 def print_channel(text: str) -> None:
     print(f"{BLUE}{text}{RESET}")
+
 
 # ---------------------------------------------------------------------------
 # 数据结构
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class InboundMessage:
     """所有通道都规范化为此结构。Agent 循环只看到 InboundMessage。"""
+
     text: str
     sender_id: str
     channel: str = ""
@@ -88,24 +101,30 @@ class InboundMessage:
     media: list = field(default_factory=list)
     raw: dict = field(default_factory=dict)
 
+
 @dataclass
 class ChannelAccount:
     """每个 bot 的配置。同一通道类型可以运行多个 bot。"""
+
     channel: str
     account_id: str
     token: str = ""
     config: dict = field(default_factory=dict)
 
+
 # ---------------------------------------------------------------------------
 # 会话键
 # ---------------------------------------------------------------------------
 
+
 def build_session_key(channel: str, account_id: str, peer_id: str) -> str:
     return f"agent:main:direct:{channel}:{peer_id}"
+
 
 # ---------------------------------------------------------------------------
 # Channel 抽象基类
 # ---------------------------------------------------------------------------
+
 
 class Channel(ABC):
     name: str = "unknown"
@@ -119,9 +138,11 @@ class Channel(ABC):
     def close(self) -> None:
         pass
 
+
 # ---------------------------------------------------------------------------
 # CLIChannel
 # ---------------------------------------------------------------------------
+
 
 class CLIChannel(Channel):
     name = "cli"
@@ -137,21 +158,27 @@ class CLIChannel(Channel):
         if not text:
             return None
         return InboundMessage(
-            text=text, sender_id="cli-user", channel="cli",
-            account_id=self.account_id, peer_id="cli-user",
+            text=text,
+            sender_id="cli-user",
+            channel="cli",
+            account_id=self.account_id,
+            peer_id="cli-user",
         )
 
     def send(self, to: str, text: str, **kwargs: Any) -> bool:
         print_assistant(text)
         return True
 
+
 # ---------------------------------------------------------------------------
 # 偏移量持久化 -- 两个简单函数
 # ---------------------------------------------------------------------------
 
+
 def save_offset(path: Path, offset: int) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(str(offset))
+
 
 def load_offset(path: Path) -> int:
     try:
@@ -159,9 +186,11 @@ def load_offset(path: Path) -> int:
     except Exception:
         return 0
 
+
 # ---------------------------------------------------------------------------
 # TelegramChannel -- Bot API 长轮询
 # ---------------------------------------------------------------------------
+
 
 class TelegramChannel(Channel):
     name = "telegram"
@@ -174,7 +203,9 @@ class TelegramChannel(Channel):
         self.base_url = f"https://api.telegram.org/bot{account.token}"
         self._http = httpx.Client(timeout=35.0)
         raw = account.config.get("allowed_chats", "")
-        self.allowed_chats = {c.strip() for c in raw.split(",") if c.strip()} if raw else set()
+        self.allowed_chats = (
+            {c.strip() for c in raw.split(",") if c.strip()} if raw else set()
+        )
 
         self._offset_path = STATE_DIR / "telegram" / f"offset-{self.account_id}.txt"
         self._offset = load_offset(self._offset_path)
@@ -188,7 +219,9 @@ class TelegramChannel(Channel):
             resp = self._http.post(f"{self.base_url}/{method}", json=filtered)
             data = resp.json()
             if not data.get("ok"):
-                print(f"  {RED}[telegram] {method}: {data.get('description', '?')}{RESET}")
+                print(
+                    f"  {RED}[telegram] {method}: {data.get('description', '?')}{RESET}"
+                )
                 return {}
             return data.get("result", {})
         except Exception as exc:
@@ -199,8 +232,9 @@ class TelegramChannel(Channel):
         self._api("sendChatAction", chat_id=chat_id, action="typing")
 
     def poll(self) -> list[InboundMessage]:
-        result = self._api("getUpdates", offset=self._offset, timeout=30,
-                           allowed_updates=["message"])
+        result = self._api(
+            "getUpdates", offset=self._offset, timeout=30, allowed_updates=["message"]
+        )
         if not result or not isinstance(result, list):
             return self._flush_all()
 
@@ -256,7 +290,15 @@ class TelegramChannel(Channel):
                 for mt in ("photo", "video", "document", "audio"):
                     if mt in m:
                         raw_m = m[mt]
-                        fid = raw_m[-1]["file_id"] if isinstance(raw_m, list) and raw_m else raw_m.get("file_id", "") if isinstance(raw_m, dict) else ""
+                        fid = (
+                            raw_m[-1]["file_id"]
+                            if isinstance(raw_m, list) and raw_m
+                            else (
+                                raw_m.get("file_id", "")
+                                if isinstance(raw_m, dict)
+                                else ""
+                            )
+                        )
                         media_items.append({"type": mt, "file_id": fid})
             inbound = self._parse(entries[0][0], entries[0][1])
             if inbound:
@@ -311,9 +353,13 @@ class TelegramChannel(Channel):
             peer_id = chat_id
 
         return InboundMessage(
-            text=text, sender_id=user_id, channel="telegram",
-            account_id=self.account_id, peer_id=peer_id,
-            is_group=is_group, raw=raw_update,
+            text=text,
+            sender_id=user_id,
+            channel="telegram",
+            account_id=self.account_id,
+            peer_id=peer_id,
+            is_group=is_group,
+            raw=raw_update,
         )
 
     def receive(self) -> InboundMessage | None:
@@ -327,8 +373,9 @@ class TelegramChannel(Channel):
             chat_id, thread_id = parts[0], int(parts[1]) if len(parts) > 1 else None
         ok = True
         for chunk in self._chunk(text):
-            if not self._api("sendMessage", chat_id=chat_id, text=chunk,
-                             message_thread_id=thread_id):
+            if not self._api(
+                "sendMessage", chat_id=chat_id, text=chunk, message_thread_id=thread_id
+            ):
                 ok = False
         return ok
 
@@ -338,7 +385,8 @@ class TelegramChannel(Channel):
         chunks = []
         while text:
             if len(text) <= self.MAX_MSG_LEN:
-                chunks.append(text); break
+                chunks.append(text)
+                break
             cut = text.rfind("\n", 0, self.MAX_MSG_LEN)
             if cut <= 0:
                 cut = self.MAX_MSG_LEN
@@ -349,9 +397,11 @@ class TelegramChannel(Channel):
     def close(self) -> None:
         self._http.close()
 
+
 # ---------------------------------------------------------------------------
 # FeishuChannel -- 基于 webhook (飞书/Lark)
 # ---------------------------------------------------------------------------
+
 
 class FeishuChannel(Channel):
     name = "feishu"
@@ -365,8 +415,11 @@ class FeishuChannel(Channel):
         self._encrypt_key = account.config.get("encrypt_key", "")
         self._bot_open_id = account.config.get("bot_open_id", "")
         is_lark = account.config.get("is_lark", False)
-        self.api_base = ("https://open.larksuite.com/open-apis" if is_lark
-                         else "https://open.feishu.cn/open-apis")
+        self.api_base = (
+            "https://open.larksuite.com/open-apis"
+            if is_lark
+            else "https://open.feishu.cn/open-apis"
+        )
         self._tenant_token: str = ""
         self._token_expires_at: float = 0.0
         self._http = httpx.Client(timeout=15.0)
@@ -426,7 +479,9 @@ class FeishuChannel(Channel):
                         if tag == "text":
                             texts.append(node.get("text", ""))
                         elif tag == "a":
-                            texts.append(node.get("text", "") + " " + node.get("href", ""))
+                            texts.append(
+                                node.get("text", "") + " " + node.get("href", "")
+                            )
             return "\n".join(texts), media
         if msg_type == "image":
             key = content.get("image_key", "")
@@ -460,10 +515,14 @@ class FeishuChannel(Channel):
             return None
 
         return InboundMessage(
-            text=text, sender_id=user_id, channel="feishu",
+            text=text,
+            sender_id=user_id,
+            channel="feishu",
             account_id=self.account_id,
             peer_id=user_id if chat_type == "p2p" else chat_id,
-            media=media, is_group=is_group, raw=payload,
+            media=media,
+            is_group=is_group,
+            raw=payload,
         )
 
     def receive(self) -> InboundMessage | None:
@@ -478,8 +537,11 @@ class FeishuChannel(Channel):
                 f"{self.api_base}/im/v1/messages",
                 params={"receive_id_type": "chat_id"},
                 headers={"Authorization": f"Bearer {token}"},
-                json={"receive_id": to, "msg_type": "text",
-                      "content": json.dumps({"text": text})},
+                json={
+                    "receive_id": to,
+                    "msg_type": "text",
+                    "content": json.dumps({"text": text}),
+                },
             )
             data = resp.json()
             if data.get("code") != 0:
@@ -493,10 +555,12 @@ class FeishuChannel(Channel):
     def close(self) -> None:
         self._http.close()
 
+
 # ---------------------------------------------------------------------------
 # 工具
 # ---------------------------------------------------------------------------
 MEMORY_FILE = WORKSPACE_DIR / "MEMORY.md"
+
 
 def tool_memory_write(content: str) -> str:
     print_tool("memory_write", f"{len(content)} chars")
@@ -507,6 +571,7 @@ def tool_memory_write(content: str) -> str:
         return f"Written to memory: {content[:80]}..."
     except Exception as exc:
         return f"Error: {exc}"
+
 
 def tool_memory_search(query: str) -> str:
     print_tool("memory_search", query)
@@ -519,21 +584,37 @@ def tool_memory_search(query: str) -> str:
     except Exception as exc:
         return f"Error: {exc}"
 
+
 TOOLS = [
-    {"name": "memory_write", "description": "Save a note to long-term memory.",
-     "input_schema": {"type": "object", "required": ["content"],
-                      "properties": {"content": {"type": "string",
-                                                  "description": "The text to remember."}}}},
-    {"name": "memory_search", "description": "Search through saved memory notes.",
-     "input_schema": {"type": "object", "required": ["query"],
-                      "properties": {"query": {"type": "string",
-                                               "description": "Search keyword."}}}},
+    {
+        "name": "memory_write",
+        "description": "Save a note to long-term memory.",
+        "input_schema": {
+            "type": "object",
+            "required": ["content"],
+            "properties": {
+                "content": {"type": "string", "description": "The text to remember."}
+            },
+        },
+    },
+    {
+        "name": "memory_search",
+        "description": "Search through saved memory notes.",
+        "input_schema": {
+            "type": "object",
+            "required": ["query"],
+            "properties": {
+                "query": {"type": "string", "description": "Search keyword."}
+            },
+        },
+    },
 ]
 
 TOOL_HANDLERS: dict[str, Any] = {
     "memory_write": tool_memory_write,
     "memory_search": tool_memory_search,
 }
+
 
 def process_tool_call(tool_name: str, tool_input: dict) -> str:
     handler = TOOL_HANDLERS.get(tool_name)
@@ -544,9 +625,11 @@ def process_tool_call(tool_name: str, tool_input: dict) -> str:
     except Exception as exc:
         return f"Error: {tool_name} failed: {exc}"
 
+
 # ---------------------------------------------------------------------------
 # ChannelManager
 # ---------------------------------------------------------------------------
+
 
 class ChannelManager:
     def __init__(self) -> None:
@@ -567,12 +650,17 @@ class ChannelManager:
         for ch in self.channels.values():
             ch.close()
 
+
 # ---------------------------------------------------------------------------
 # Telegram 后台轮询线程
 # ---------------------------------------------------------------------------
 
+
 def telegram_poll_loop(
-    tg: TelegramChannel, queue: list, lock: threading.Lock, stop: threading.Event,
+    tg: TelegramChannel,
+    queue: list,
+    lock: threading.Lock,
+    stop: threading.Event,
 ) -> None:
     print_channel(f"  [telegram] Polling started for {tg.account_id}")
     while not stop.is_set():
@@ -585,9 +673,11 @@ def telegram_poll_loop(
             print(f"  {RED}[telegram] Poll error: {exc}{RESET}")
             stop.wait(5.0)
 
+
 # ---------------------------------------------------------------------------
 # REPL 命令
 # ---------------------------------------------------------------------------
+
 
 def handle_repl_command(cmd: str, mgr: ChannelManager) -> bool:
     cmd = cmd.strip().lower()
@@ -605,9 +695,11 @@ def handle_repl_command(cmd: str, mgr: ChannelManager) -> bool:
         return True
     return False
 
+
 # ---------------------------------------------------------------------------
 # Agent 回合
 # ---------------------------------------------------------------------------
+
 
 def run_agent_turn(
     inbound: InboundMessage,
@@ -628,8 +720,11 @@ def run_agent_turn(
     while True:
         try:
             response = client.messages.create(
-                model=MODEL_ID, max_tokens=8096,
-                system=SYSTEM_PROMPT, tools=TOOLS, messages=messages,
+                model=MODEL_ID,
+                max_tokens=8096,
+                system=SYSTEM_PROMPT,
+                tools=TOOLS,
+                messages=messages,
             )
         except Exception as exc:
             print(f"\n{YELLOW}API Error: {exc}{RESET}\n")
@@ -654,10 +749,13 @@ def run_agent_turn(
             results = []
             for block in response.content:
                 if block.type == "tool_use":
-                    results.append({
-                        "type": "tool_result", "tool_use_id": block.id,
-                        "content": process_tool_call(block.name, block.input),
-                    })
+                    results.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": process_tool_call(block.name, block.input),
+                        }
+                    )
             messages.append({"role": "user", "content": results})
         else:
             text = "".join(b.text for b in response.content if hasattr(b, "text"))
@@ -667,9 +765,11 @@ def run_agent_turn(
                     ch.send(inbound.peer_id, text)
             break
 
+
 # ---------------------------------------------------------------------------
 # 主循环
 # ---------------------------------------------------------------------------
+
 
 def agent_loop() -> None:
     mgr = ChannelManager()
@@ -685,14 +785,17 @@ def agent_loop() -> None:
     tg_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
     if tg_token and HAS_HTTPX:
         tg_acc = ChannelAccount(
-            channel="telegram", account_id="tg-primary", token=tg_token,
+            channel="telegram",
+            account_id="tg-primary",
+            token=tg_token,
             config={"allowed_chats": os.getenv("TELEGRAM_ALLOWED_CHATS", "")},
         )
         mgr.accounts.append(tg_acc)
         tg_channel = TelegramChannel(tg_acc)
         mgr.register(tg_channel)
         tg_thread = threading.Thread(
-            target=telegram_poll_loop, daemon=True,
+            target=telegram_poll_loop,
+            daemon=True,
             args=(tg_channel, msg_queue, q_lock, stop_event),
         )
         tg_thread.start()
@@ -701,9 +804,11 @@ def agent_loop() -> None:
     fs_secret = os.getenv("FEISHU_APP_SECRET", "").strip()
     if fs_id and fs_secret and HAS_HTTPX:
         fs_acc = ChannelAccount(
-            channel="feishu", account_id="feishu-primary",
+            channel="feishu",
+            account_id="feishu-primary",
             config={
-                "app_id": fs_id, "app_secret": fs_secret,
+                "app_id": fs_id,
+                "app_secret": fs_secret,
                 "encrypt_key": os.getenv("FEISHU_ENCRYPT_KEY", ""),
                 "bot_open_id": os.getenv("FEISHU_BOT_OPEN_ID", ""),
                 "is_lark": os.getenv("FEISHU_IS_LARK", "").lower() in ("1", "true"),
@@ -734,6 +839,7 @@ def agent_loop() -> None:
         # CLI 输入 (当 Telegram 活跃时使用非阻塞模式)
         if tg_channel:
             import select
+
             if not select.select([sys.stdin], [], [], 0.5)[0]:
                 continue
             try:
@@ -754,9 +860,15 @@ def agent_loop() -> None:
             continue
 
         run_agent_turn(
-            InboundMessage(text=user_input, sender_id="cli-user",
-                           channel="cli", account_id="cli-local", peer_id="cli-user"),
-            conversations, mgr,
+            InboundMessage(
+                text=user_input,
+                sender_id="cli-user",
+                channel="cli",
+                account_id="cli-local",
+                peer_id="cli-user",
+            ),
+            conversations,
+            mgr,
         )
 
     print(f"{DIM}Goodbye.{RESET}")
@@ -765,9 +877,11 @@ def agent_loop() -> None:
         tg_thread.join(timeout=3.0)
     mgr.close_all()
 
+
 # ---------------------------------------------------------------------------
 # 入口
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     if not os.getenv("ANTHROPIC_API_KEY"):
@@ -775,6 +889,7 @@ def main() -> None:
         print(f"{DIM}Copy .env.example to .env and fill in your key.{RESET}")
         sys.exit(1)
     agent_loop()
+
 
 if __name__ == "__main__":
     main()
