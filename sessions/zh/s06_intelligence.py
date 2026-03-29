@@ -47,6 +47,7 @@ import math
 import os
 import re
 import sys
+import readline
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -66,8 +67,14 @@ WORKSPACE_DIR = Path(__file__).resolve().parent.parent.parent / "workspace"
 
 # Bootstrap 文件名 -- 每个 agent 启动时加载这 8 个文件
 BOOTSTRAP_FILES = [
-    "SOUL.md", "IDENTITY.md", "TOOLS.md", "USER.md",
-    "HEARTBEAT.md", "BOOTSTRAP.md", "AGENTS.md", "MEMORY.md",
+    "SOUL.md",
+    "IDENTITY.md",
+    "TOOLS.md",
+    "USER.md",
+    "HEARTBEAT.md",
+    "BOOTSTRAP.md",
+    "AGENTS.md",
+    "MEMORY.md",
 ]
 
 MAX_FILE_CHARS = 20000
@@ -116,6 +123,7 @@ def print_section(title: str) -> None:
 # 不同加载模式 (full/minimal/none) 适用于不同场景:
 #   full = 主 agent | minimal = 子 agent / cron | none = 最小化
 
+
 class BootstrapLoader:
 
     def __init__(self, workspace_dir: Path) -> None:
@@ -137,12 +145,17 @@ class BootstrapLoader:
         cut = content.rfind("\n", 0, max_chars)
         if cut <= 0:
             cut = max_chars
-        return content[:cut] + f"\n\n[... truncated ({len(content)} chars total, showing first {cut}) ...]"
+        return (
+            content[:cut]
+            + f"\n\n[... truncated ({len(content)} chars total, showing first {cut}) ...]"
+        )
 
     def load_all(self, mode: str = "full") -> dict[str, str]:
         if mode == "none":
             return {}
-        names = ["AGENTS.md", "TOOLS.md"] if mode == "minimal" else list(BOOTSTRAP_FILES)
+        names = (
+            ["AGENTS.md", "TOOLS.md"] if mode == "minimal" else list(BOOTSTRAP_FILES)
+        )
         result: dict[str, str] = {}
         total = 0
         for name in names:
@@ -228,13 +241,15 @@ class SkillsManager:
                 parts = content.split("---", 2)
                 if len(parts) >= 3:
                     body = parts[2].strip()
-            found.append({
-                "name": meta.get("name", ""),
-                "description": meta.get("description", ""),
-                "invocation": meta.get("invocation", ""),
-                "body": body,
-                "path": str(child),
-            })
+            found.append(
+                {
+                    "name": meta.get("name", ""),
+                    "description": meta.get("description", ""),
+                    "invocation": meta.get("invocation", ""),
+                    "body": body,
+                    "path": str(child),
+                }
+            )
         return found
 
     def discover(self, extra_dirs: list[Path] | None = None) -> None:
@@ -242,11 +257,11 @@ class SkillsManager:
         scan_order: list[Path] = []
         if extra_dirs:
             scan_order.extend(extra_dirs)
-        scan_order.append(self.workspace_dir / "skills")           # 内置技能
-        scan_order.append(self.workspace_dir / ".skills")          # 托管技能
+        scan_order.append(self.workspace_dir / "skills")  # 内置技能
+        scan_order.append(self.workspace_dir / ".skills")  # 托管技能
         scan_order.append(self.workspace_dir / ".agents" / "skills")  # 个人 agent 技能
-        scan_order.append(Path.cwd() / ".agents" / "skills")      # 项目 agent 技能
-        scan_order.append(Path.cwd() / "skills")                  # 工作区技能
+        scan_order.append(Path.cwd() / ".agents" / "skills")  # 项目 agent 技能
+        scan_order.append(Path.cwd() / "skills")  # 工作区技能
 
         seen: dict[str, dict[str, str]] = {}
         for d in scan_order:
@@ -372,7 +387,10 @@ class MemoryStore:
             tf: dict[str, int] = {}
             for t in tokens:
                 tf[t] = tf.get(t, 0) + 1
-            return {t: c * (math.log((n + 1) / (df.get(t, 0) + 1)) + 1) for t, c in tf.items()}
+            return {
+                t: c * (math.log((n + 1) / (df.get(t, 0) + 1)) + 1)
+                for t, c in tf.items()
+            }
 
         def cosine(a: dict[str, float], b: dict[str, float]) -> float:
             common = set(a) & set(b)
@@ -393,7 +411,13 @@ class MemoryStore:
                 snippet = chunks[i]["text"]
                 if len(snippet) > 200:
                     snippet = snippet[:200] + "..."
-                scored.append({"path": chunks[i]["path"], "score": round(score, 4), "snippet": snippet})
+                scored.append(
+                    {
+                        "path": chunks[i]["path"],
+                        "score": round(score, 4),
+                        "snippet": snippet,
+                    }
+                )
         scored.sort(key=lambda x: x["score"], reverse=True)
         return scored[:top_k]
 
@@ -432,7 +456,9 @@ class MemoryStore:
         union = len(set_a | set_b)
         return inter / union if union else 0.0
 
-    def _vector_search(self, query: str, chunks: list[dict[str, str]], top_k: int = 10) -> list[dict[str, Any]]:
+    def _vector_search(
+        self, query: str, chunks: list[dict[str, str]], top_k: int = 10
+    ) -> list[dict[str, Any]]:
         """Search by simulated vector similarity."""
         q_vec = self._hash_vector(query)
         scored = []
@@ -444,7 +470,9 @@ class MemoryStore:
         scored.sort(key=lambda x: x["score"], reverse=True)
         return scored[:top_k]
 
-    def _keyword_search(self, query: str, chunks: list[dict[str, str]], top_k: int = 10) -> list[dict[str, Any]]:
+    def _keyword_search(
+        self, query: str, chunks: list[dict[str, str]], top_k: int = 10
+    ) -> list[dict[str, Any]]:
         """Reuse existing TF-IDF as the keyword channel, return ranked results."""
         query_tokens = self._tokenize(query)
         if not query_tokens:
@@ -460,7 +488,10 @@ class MemoryStore:
             tf: dict[str, int] = {}
             for t in tokens:
                 tf[t] = tf.get(t, 0) + 1
-            return {t: c * (math.log((n + 1) / (df.get(t, 0) + 1)) + 1) for t, c in tf.items()}
+            return {
+                t: c * (math.log((n + 1) / (df.get(t, 0) + 1)) + 1)
+                for t, c in tf.items()
+            }
 
         def cosine(a: dict[str, float], b: dict[str, float]) -> float:
             common = set(a) & set(b)
@@ -505,7 +536,9 @@ class MemoryStore:
         return result
 
     @staticmethod
-    def _temporal_decay(results: list[dict[str, Any]], decay_rate: float = 0.01) -> list[dict[str, Any]]:
+    def _temporal_decay(
+        results: list[dict[str, Any]], decay_rate: float = 0.01
+    ) -> list[dict[str, Any]]:
         """Apply exponential temporal decay to scores based on chunk age."""
         now = datetime.now(timezone.utc)
         for r in results:
@@ -514,7 +547,9 @@ class MemoryStore:
             date_match = re.search(r"(\d{4}-\d{2}-\d{2})", path)
             if date_match:
                 try:
-                    chunk_date = datetime.strptime(date_match.group(1), "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                    chunk_date = datetime.strptime(
+                        date_match.group(1), "%Y-%m-%d"
+                    ).replace(tzinfo=timezone.utc)
                     age_days = (now - chunk_date).total_seconds() / 86400.0
                 except ValueError:
                     pass
@@ -541,7 +576,9 @@ class MemoryStore:
                 relevance = results[idx]["score"]
                 max_sim = 0.0
                 for sel_idx in selected:
-                    sim = MemoryStore._jaccard_similarity(tokenized[idx], tokenized[sel_idx])
+                    sim = MemoryStore._jaccard_similarity(
+                        tokenized[idx], tokenized[sel_idx]
+                    )
                     if sim > max_sim:
                         max_sim = sim
                 mmr = lambda_param * relevance - (1 - lambda_param) * max_sim
@@ -568,19 +605,35 @@ class MemoryStore:
             snippet = r["chunk"]["text"]
             if len(snippet) > 200:
                 snippet = snippet[:200] + "..."
-            result.append({"path": r["chunk"]["path"], "score": round(r["score"], 4), "snippet": snippet})
+            result.append(
+                {
+                    "path": r["chunk"]["path"],
+                    "score": round(r["score"], 4),
+                    "snippet": snippet,
+                }
+            )
         return result
 
     def get_stats(self) -> dict[str, Any]:
         evergreen = self.load_evergreen()
-        daily_files = list(self.memory_dir.glob("*.jsonl")) if self.memory_dir.is_dir() else []
+        daily_files = (
+            list(self.memory_dir.glob("*.jsonl")) if self.memory_dir.is_dir() else []
+        )
         total_entries = 0
         for f in daily_files:
             try:
-                total_entries += sum(1 for line in f.read_text(encoding="utf-8").splitlines() if line.strip())
+                total_entries += sum(
+                    1
+                    for line in f.read_text(encoding="utf-8").splitlines()
+                    if line.strip()
+                )
             except Exception:
                 pass
-        return {"evergreen_chars": len(evergreen), "daily_files": len(daily_files), "daily_entries": total_entries}
+        return {
+            "evergreen_chars": len(evergreen),
+            "daily_files": len(daily_files),
+            "daily_entries": total_entries,
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -600,7 +653,9 @@ def tool_memory_search(query: str, top_k: int = 5) -> str:
     results = memory_store.hybrid_search(query, top_k)
     if not results:
         return "No relevant memories found."
-    return "\n".join(f"[{r['path']}] (score: {r['score']}) {r['snippet']}" for r in results)
+    return "\n".join(
+        f"[{r['path']}] (score: {r['score']}) {r['snippet']}" for r in results
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -625,8 +680,14 @@ TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "content": {"type": "string", "description": "The fact or observation to remember."},
-                "category": {"type": "string", "description": "Category: preference, fact, context, etc."},
+                "content": {
+                    "type": "string",
+                    "description": "The fact or observation to remember.",
+                },
+                "category": {
+                    "type": "string",
+                    "description": "Category: preference, fact, context, etc.",
+                },
             },
             "required": ["content"],
         },
@@ -685,7 +746,9 @@ def build_system_prompt(
 
     # 第 1 层: 身份 -- 来自 IDENTITY.md 或默认值
     identity = bootstrap.get("IDENTITY.md", "").strip()
-    sections.append(identity if identity else "You are a helpful personal AI assistant.")
+    sections.append(
+        identity if identity else "You are a helpful personal AI assistant."
+    )
 
     # 第 2 层: 灵魂 -- 人格注入, 越靠前影响力越强
     if mode == "full":
@@ -741,7 +804,9 @@ def build_system_prompt(
         "discord": "You are responding via Discord. Keep messages under 2000 characters.",
         "slack": "You are responding via Slack. Use Slack mrkdwn formatting.",
     }
-    sections.append(f"## Channel\n\n{hints.get(channel, f'You are responding via {channel}.')}")
+    sections.append(
+        f"## Channel\n\n{hints.get(channel, f'You are responding via {channel}.')}"
+    )
 
     return "\n\n".join(sections)
 
@@ -749,6 +814,7 @@ def build_system_prompt(
 # ---------------------------------------------------------------------------
 # 6. Agent 循环 + REPL
 # ---------------------------------------------------------------------------
+
 
 def handle_repl_command(
     cmd: str,
@@ -773,7 +839,9 @@ def handle_repl_command(
             print(f"{DIM}(未找到技能){RESET}")
         else:
             for s in skills_mgr.skills:
-                print(f"  {BLUE}{s['invocation']}{RESET}  {s['name']} - {s['description']}")
+                print(
+                    f"  {BLUE}{s['invocation']}{RESET}  {s['name']} - {s['description']}"
+                )
                 print(f"    {DIM}path: {s['path']}{RESET}")
         return True
 
@@ -803,12 +871,16 @@ def handle_repl_command(
     if command == "/prompt":
         print_section("完整系统提示词")
         prompt = build_system_prompt(
-            mode="full", bootstrap=bootstrap_data,
-            skills_block=skills_block, memory_context=_auto_recall("show prompt"),
+            mode="full",
+            bootstrap=bootstrap_data,
+            skills_block=skills_block,
+            memory_context=_auto_recall("show prompt"),
         )
         if len(prompt) > 3000:
             print(prompt[:3000])
-            print(f"\n{DIM}... ({len(prompt) - 3000} more chars, total {len(prompt)}){RESET}")
+            print(
+                f"\n{DIM}... ({len(prompt) - 3000} more chars, total {len(prompt)}){RESET}"
+            )
         else:
             print(prompt)
         print(f"\n{DIM}提示词总长度: {len(prompt)} 字符{RESET}")
@@ -854,7 +926,9 @@ def agent_loop() -> None:
     print_info(f"  Bootstrap 文件: {len(bootstrap_data)}")
     print_info(f"  已发现技能: {len(skills_mgr.skills)}")
     stats = memory_store.get_stats()
-    print_info(f"  记忆: 长期 {stats['evergreen_chars']}字符, {stats['daily_files']} 个每日文件")
+    print_info(
+        f"  记忆: 长期 {stats['evergreen_chars']}字符, {stats['daily_files']} 个每日文件"
+    )
     print_info("  命令: /soul /skills /memory /search /prompt /bootstrap")
     print_info("  输入 'quit' 或 'exit' 退出.")
     print_info("=" * 60)
@@ -875,7 +949,9 @@ def agent_loop() -> None:
 
         # REPL 命令
         if user_input.startswith("/"):
-            if handle_repl_command(user_input, bootstrap_data, skills_mgr, skills_block):
+            if handle_repl_command(
+                user_input, bootstrap_data, skills_mgr, skills_block
+            ):
                 continue
 
         # 自动记忆搜索 -- 将相关记忆注入系统提示词
@@ -885,8 +961,10 @@ def agent_loop() -> None:
 
         # 每轮重建系统提示词 (记忆可能在上一轮被更新)
         system_prompt = build_system_prompt(
-            mode="full", bootstrap=bootstrap_data,
-            skills_block=skills_block, memory_context=memory_context,
+            mode="full",
+            bootstrap=bootstrap_data,
+            skills_block=skills_block,
+            memory_context=memory_context,
         )
 
         messages.append({"role": "user", "content": user_input})
@@ -895,8 +973,11 @@ def agent_loop() -> None:
         while True:
             try:
                 response = client.messages.create(
-                    model=MODEL_ID, max_tokens=8096,
-                    system=system_prompt, tools=TOOLS, messages=messages,
+                    model=MODEL_ID,
+                    max_tokens=8096,
+                    system=system_prompt,
+                    tools=TOOLS,
+                    messages=messages,
                 )
             except Exception as exc:
                 print(f"\n{YELLOW}API Error: {exc}{RESET}\n")
@@ -919,7 +1000,13 @@ def agent_loop() -> None:
                     if block.type != "tool_use":
                         continue
                     result = process_tool_call(block.name, block.input)
-                    tool_results.append({"type": "tool_result", "tool_use_id": block.id, "content": result})
+                    tool_results.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": result,
+                        }
+                    )
                 messages.append({"role": "user", "content": tool_results})
                 continue
             else:
@@ -933,6 +1020,7 @@ def agent_loop() -> None:
 # ---------------------------------------------------------------------------
 # 入口
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     if not os.getenv("ANTHROPIC_API_KEY"):
