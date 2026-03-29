@@ -21,7 +21,7 @@
       "enabled": true,
       "schedule": {
         "kind": "cron",
-        "expr": "36 14 * * *",
+        "expr": "43 15 * * *",
         "tz": "Asia/Shanghai"
       },
       "payload": {
@@ -44,20 +44,6 @@
         "message": "Run a security audit on project dependencies. Report any critical vulnerabilities."
       },
       "delete_after_run": false
-    },
-    {
-      "id": "remind-meeting",
-      "name": "Meeting Reminder",
-      "enabled": true,
-      "schedule": {
-        "kind": "at",
-        "at": "2026-02-25T09:30:00+08:00"
-      },
-      "payload": {
-        "kind": "system_event",
-        "text": "Reminder: You have a team meeting at 10:00 AM today."
-      },
-      "delete_after_run": true
     },
     {
       "id": "health-check",

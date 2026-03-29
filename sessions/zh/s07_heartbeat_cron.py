@@ -214,8 +214,22 @@ class HeartbeatRunner:
         self._output_queue: list[str] = []
         self._queue_lock = threading.Lock()
         self._last_output: str = ""
+        self._realtime_emit: Any = None
         self._soul = SoulSystem(workspace)
         self._memory = MemoryStore(workspace)
+
+    def set_realtime_emitter(self, callback: Any) -> None:
+        self._realtime_emit = callback
+
+    def _emit_output(self, message: str) -> None:
+        if self._realtime_emit:
+            try:
+                self._realtime_emit(message)
+                return
+            except Exception:
+                pass
+        with self._queue_lock:
+            self._output_queue.append(message)
 
     def should_run(self) -> tuple[bool, str]:
         """4 项前置检查. 锁的检测在 _execute() 中单独处理."""
@@ -268,15 +282,14 @@ class HeartbeatRunner:
             response = run_agent_single_turn(instructions, sys_prompt)
             meaningful = self._parse_response(response)
             if meaningful is None:
+                self._emit_output("HEARTBEAT_OK")
                 return
             if meaningful.strip() == self._last_output:
                 return
             self._last_output = meaningful.strip()
-            with self._queue_lock:
-                self._output_queue.append(meaningful)
+            self._emit_output(meaningful)
         except Exception as exc:
-            with self._queue_lock:
-                self._output_queue.append(f"[heartbeat error: {exc}]")
+            self._emit_output(f"[heartbeat error: {exc}]")
         finally:
             self.running = False
             self.last_run_at = time.time()
@@ -326,12 +339,12 @@ class HeartbeatRunner:
             response = run_agent_single_turn(instructions, sys_prompt)
             meaningful = self._parse_response(response)
             if meaningful is None:
+                self._emit_output("HEARTBEAT_OK")
                 return "HEARTBEAT_OK (nothing to report)"
             if meaningful.strip() == self._last_output:
                 return "duplicate content (skipped)"
             self._last_output = meaningful.strip()
-            with self._queue_lock:
-                self._output_queue.append(meaningful)
+            self._emit_output(meaningful)
             return f"triggered, output queued ({len(meaningful)} chars)"
         except Exception as exc:
             return f"trigger failed: {exc}"
@@ -440,6 +453,44 @@ class CronService:
     def set_realtime_emitter(self, callback: Any) -> None:
         self._realtime_emit = callback
 
+    def _serialize_jobs(self) -> dict[str, Any]:
+        with self._jobs_lock:
+            jobs_snapshot = list(self.jobs)
+        return {
+            "jobs": [
+                {
+                    "id": job.id,
+                    "name": job.name,
+                    "enabled": job.enabled,
+                    "schedule": {
+                        "kind": job.schedule_kind,
+                        **job.schedule_config,
+                    },
+                    "payload": job.payload,
+                    "delete_after_run": job.delete_after_run,
+                }
+                for job in jobs_snapshot
+            ]
+        }
+
+    def _persist_jobs(self) -> None:
+        data = self._serialize_jobs()
+        tmp_path = self.cron_file.with_suffix(self.cron_file.suffix + ".tmp")
+        try:
+            self.cron_file.parent.mkdir(parents=True, exist_ok=True)
+            tmp_path.write_text(
+                json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+            tmp_path.replace(self.cron_file)
+            self._cron_mtime_ns = self.cron_file.stat().st_mtime_ns
+        except OSError as exc:
+            print(f"{YELLOW}CRON.json persist error: {exc}{RESET}")
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
     def _maybe_reload_jobs(self) -> None:
         try:
             mtime_ns = self.cron_file.stat().st_mtime_ns
@@ -499,15 +550,17 @@ class CronService:
         if remove_ids:
             with self._jobs_lock:
                 self.jobs = [j for j in self.jobs if j.id not in remove_ids]
+            self._persist_jobs()
 
     def _emit_output(self, message: str) -> None:
-        with self._queue_lock:
-            self._output_queue.append(message)
         if self._realtime_emit:
             try:
                 self._realtime_emit(message)
+                return
             except Exception:
                 pass
+        with self._queue_lock:
+            self._output_queue.append(message)
 
     def _run_job(self, job: CronJob, now: float) -> None:
         payload = job.payload
@@ -548,6 +601,7 @@ class CronService:
                 )
                 print(f"{RED}{msg}{RESET}")
                 self._emit_output(msg)
+                self._persist_jobs()
         else:
             job.consecutive_errors = 0
         job.next_run_at = self._compute_next(job, now)
@@ -571,6 +625,10 @@ class CronService:
         for job in self.jobs:
             if job.id == job_id:
                 self._run_job(job, time.time())
+                if job.delete_after_run and job.schedule_kind == "at":
+                    with self._jobs_lock:
+                        self.jobs = [j for j in self.jobs if j.id != job.id]
+                    self._persist_jobs()
                 return f"'{job.name}' triggered (errors={job.consecutive_errors})"
         return f"Job '{job_id}' not found"
 
@@ -636,6 +694,12 @@ def agent_loop() -> None:
             print_cron(message)
             print(colored_prompt(), end="", flush=True)
 
+    def print_heartbeat_realtime(message: str) -> None:
+        with terminal_lock:
+            print()
+            print_heartbeat(message)
+            print(colored_prompt(), end="", flush=True)
+
     heartbeat = HeartbeatRunner(
         workspace=WORKSPACE_DIR,
         lane_lock=lane_lock,
@@ -645,6 +709,7 @@ def agent_loop() -> None:
             int(os.getenv("HEARTBEAT_ACTIVE_END", "22")),
         ),
     )
+    heartbeat.set_realtime_emitter(print_heartbeat_realtime)
     cron_svc = CronService(WORKSPACE_DIR / "CRON.json")
     cron_svc.set_realtime_emitter(print_cron_realtime)
     heartbeat.start()
