@@ -16,6 +16,21 @@
       "delete_after_run": false
     },
     {
+      "id": "afternoon-briefing",
+      "name": "afternoon Briefing",
+      "enabled": true,
+      "schedule": {
+        "kind": "cron",
+        "expr": "36 14 * * *",
+        "tz": "Asia/Shanghai"
+      },
+      "payload": {
+        "kind": "agent_turn",
+        "message": "向我问好."
+      },
+      "delete_after_run": false
+    },
+    {
       "id": "dep-security-scan",
       "name": "Dependency Security Scan",
       "enabled": true,

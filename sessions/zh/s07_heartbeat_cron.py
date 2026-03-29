@@ -26,10 +26,12 @@ import os
 import sys
 import threading
 import time
+import readline
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from anthropic import Anthropic
 from croniter import croniter
@@ -47,31 +49,54 @@ client = Anthropic(
 )
 WORKSPACE_DIR = Path(__file__).resolve().parent.parent.parent / "workspace"
 CRON_DIR = WORKSPACE_DIR / "cron"
+SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
+
+
+def shanghai_now() -> datetime:
+    return datetime.now(SHANGHAI_TZ)
+
+
+def shanghai_fromtimestamp(ts: float) -> datetime:
+    return datetime.fromtimestamp(ts, tz=SHANGHAI_TZ)
 
 # ---------------------------------------------------------------------------
 # ANSI 颜色
 # ---------------------------------------------------------------------------
-CYAN, GREEN, YELLOW, DIM, RESET, BOLD = "\033[36m", "\033[32m", "\033[33m", "\033[2m", "\033[0m", "\033[1m"
+CYAN, GREEN, YELLOW, DIM, RESET, BOLD = (
+    "\033[36m",
+    "\033[32m",
+    "\033[33m",
+    "\033[2m",
+    "\033[0m",
+    "\033[1m",
+)
 MAGENTA, RED, BLUE, ORANGE = "\033[35m", "\033[31m", "\033[34m", "\033[38;5;208m"
+
 
 def colored_prompt() -> str:
     return f"{CYAN}{BOLD}You > {RESET}"
 
+
 def print_assistant(text: str) -> None:
     print(f"\n{GREEN}{BOLD}Assistant:{RESET} {text}\n")
+
 
 def print_info(text: str) -> None:
     print(f"{DIM}{text}{RESET}")
 
+
 def print_heartbeat(text: str) -> None:
     print(f"{BLUE}{BOLD}[heartbeat]{RESET} {text}")
+
 
 def print_cron(text: str) -> None:
     print(f"{MAGENTA}{BOLD}[cron]{RESET} {text}")
 
+
 # ---------------------------------------------------------------------------
 # Soul + Memory (简化版)
 # ---------------------------------------------------------------------------
+
 
 class SoulSystem:
     def __init__(self, workspace: Path) -> None:
@@ -109,46 +134,71 @@ class MemoryStore:
         if not text:
             return "No memories found."
         matches = [l for l in text.split("\n") if query.lower() in l.lower()]
-        return "\n".join(matches[:10]) if matches else f"No memories matching '{query}'."
+        return (
+            "\n".join(matches[:10]) if matches else f"No memories matching '{query}'."
+        )
 
 
 MEMORY_TOOLS = [
-    {"name": "memory_write",
-     "description": "Save an important fact or preference to long-term memory.",
-     "input_schema": {"type": "object", "properties": {
-         "content": {"type": "string", "description": "The fact or preference to remember."}},
-         "required": ["content"]}},
-    {"name": "memory_search",
-     "description": "Search long-term memory for relevant information.",
-     "input_schema": {"type": "object", "properties": {
-         "query": {"type": "string", "description": "Search query."}},
-         "required": ["query"]}},
+    {
+        "name": "memory_write",
+        "description": "Save an important fact or preference to long-term memory.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string",
+                    "description": "The fact or preference to remember.",
+                }
+            },
+            "required": ["content"],
+        },
+    },
+    {
+        "name": "memory_search",
+        "description": "Search long-term memory for relevant information.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"query": {"type": "string", "description": "Search query."}},
+            "required": ["query"],
+        },
+    },
 ]
 
 # ---------------------------------------------------------------------------
 # Agent 辅助函数 -- 单轮 LLM 调用 (heartbeat 和 cron 共用)
 # ---------------------------------------------------------------------------
 
+
 def run_agent_single_turn(prompt: str, system_prompt: str | None = None) -> str:
     """单轮 LLM 调用, 不使用工具, 返回纯文本."""
-    sys_prompt = system_prompt or "You are a helpful assistant performing a background check."
+    sys_prompt = (
+        system_prompt or "You are a helpful assistant performing a background check."
+    )
     try:
         response = client.messages.create(
-            model=MODEL_ID, max_tokens=2048, system=sys_prompt,
+            model=MODEL_ID,
+            max_tokens=2048,
+            system=sys_prompt,
             messages=[{"role": "user", "content": prompt}],
         )
         return "".join(b.text for b in response.content if hasattr(b, "text")).strip()
     except Exception as exc:
         return f"[agent error: {exc}]"
 
+
 # ---------------------------------------------------------------------------
 # HeartbeatRunner
 # ---------------------------------------------------------------------------
 
+
 class HeartbeatRunner:
     def __init__(
-        self, workspace: Path, lane_lock: threading.Lock,
-        interval: float = 1800.0, active_hours: tuple[int, int] = (9, 22),
+        self,
+        workspace: Path,
+        lane_lock: threading.Lock,
+        interval: float = 1800.0,
+        active_hours: tuple[int, int] = (9, 22),
         max_queue_size: int = 10,
     ) -> None:
         self.workspace = workspace
@@ -176,8 +226,11 @@ class HeartbeatRunner:
         now = time.time()
         elapsed = now - self.last_run_at
         if elapsed < self.interval:
-            return False, f"interval not elapsed ({self.interval - elapsed:.0f}s remaining)"
-        hour = datetime.now().hour
+            return (
+                False,
+                f"interval not elapsed ({self.interval - elapsed:.0f}s remaining)",
+            )
+        hour = shanghai_now().hour
         s, e = self.active_hours
         in_hours = (s <= hour < e) if s <= e else not (e <= hour < s)
         if not in_hours:
@@ -199,7 +252,7 @@ class HeartbeatRunner:
         extra = ""
         if mem:
             extra = f"## Known Context\n\n{mem}\n\n"
-        extra += f"Current time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        extra += f"Current time: {shanghai_now().strftime('%Y-%m-%d %H:%M:%S')}"
         return instructions, self._soul.build_system_prompt(extra)
 
     def _execute(self) -> None:
@@ -243,7 +296,9 @@ class HeartbeatRunner:
         if self._thread is not None:
             return
         self._stopped = False
-        self._thread = threading.Thread(target=self._loop, daemon=True, name="heartbeat")
+        self._thread = threading.Thread(
+            target=self._loop, daemon=True, name="heartbeat"
+        )
         self._thread.start()
 
     def stop(self) -> None:
@@ -288,20 +343,28 @@ class HeartbeatRunner:
     def status(self) -> dict[str, Any]:
         now = time.time()
         elapsed = now - self.last_run_at if self.last_run_at > 0 else None
-        next_in = max(0.0, self.interval - elapsed) if elapsed is not None else self.interval
+        next_in = (
+            max(0.0, self.interval - elapsed) if elapsed is not None else self.interval
+        )
         ok, reason = self.should_run()
         with self._queue_lock:
             qsize = len(self._output_queue)
         return {
             "enabled": self.heartbeat_path.exists(),
             "running": self.running,
-            "should_run": ok, "reason": reason,
-            "last_run": datetime.fromtimestamp(self.last_run_at).isoformat() if self.last_run_at > 0 else "never",
+            "should_run": ok,
+            "reason": reason,
+            "last_run": (
+                shanghai_fromtimestamp(self.last_run_at).isoformat()
+                if self.last_run_at > 0
+                else "never"
+            ),
             "next_in": f"{round(next_in)}s",
             "interval": f"{self.interval}s",
             "active_hours": f"{self.active_hours[0]}:00-{self.active_hours[1]}:00",
             "queue_size": qsize,
         }
+
 
 # ---------------------------------------------------------------------------
 # CronJob + CronService
@@ -311,12 +374,13 @@ class HeartbeatRunner:
 
 CRON_AUTO_DISABLE_THRESHOLD = 5
 
+
 @dataclass
 class CronJob:
     id: str
     name: str
     enabled: bool
-    schedule_kind: str       # "at" | "every" | "cron"
+    schedule_kind: str  # "at" | "every" | "cron"
     schedule_config: dict
     payload: dict
     delete_after_run: bool = False
@@ -332,33 +396,59 @@ class CronService:
         self._soul = SoulSystem(WORKSPACE_DIR)
         self._output_queue: list[str] = []
         self._queue_lock = threading.Lock()
+        self._jobs_lock = threading.Lock()
+        self._cron_mtime_ns: int = 0
+        self._realtime_emit: Any = None
         CRON_DIR.mkdir(parents=True, exist_ok=True)
         self._run_log = CRON_DIR / "cron-runs.jsonl"
         self.load_jobs()
 
     def load_jobs(self) -> None:
-        self.jobs.clear()
         if not self.cron_file.exists():
+            with self._jobs_lock:
+                self.jobs.clear()
+                self._cron_mtime_ns = 0
             return
         try:
             raw = json.loads(self.cron_file.read_text(encoding="utf-8"))
+            stat = self.cron_file.stat()
         except (json.JSONDecodeError, OSError) as exc:
             print(f"{YELLOW}CRON.json load error: {exc}{RESET}")
             return
         now = time.time()
+        jobs: list[CronJob] = []
         for jd in raw.get("jobs", []):
             sched = jd.get("schedule", {})
             kind = sched.get("kind", "")
             if kind not in ("at", "every", "cron"):
                 continue
             job = CronJob(
-                id=jd.get("id", ""), name=jd.get("name", ""),
-                enabled=jd.get("enabled", True), schedule_kind=kind,
-                schedule_config=sched, payload=jd.get("payload", {}),
+                id=jd.get("id", ""),
+                name=jd.get("name", ""),
+                enabled=jd.get("enabled", True),
+                schedule_kind=kind,
+                schedule_config=sched,
+                payload=jd.get("payload", {}),
                 delete_after_run=jd.get("delete_after_run", False),
             )
             job.next_run_at = self._compute_next(job, now)
-            self.jobs.append(job)
+            jobs.append(job)
+        with self._jobs_lock:
+            self.jobs = jobs
+            self._cron_mtime_ns = getattr(stat, "st_mtime_ns", 0)
+
+    def set_realtime_emitter(self, callback: Any) -> None:
+        self._realtime_emit = callback
+
+    def _maybe_reload_jobs(self) -> None:
+        try:
+            mtime_ns = self.cron_file.stat().st_mtime_ns
+        except OSError:
+            mtime_ns = 0
+        if mtime_ns == self._cron_mtime_ns:
+            return
+        self.load_jobs()
+        self._emit_output("CRON.json reloaded.")
 
     def _compute_next(self, job: CronJob, now: float) -> float:
         """计算下次运行时间戳. 如果没有后续调度则返回 0.0."""
@@ -384,23 +474,40 @@ class CronService:
             if not expr:
                 return 0.0
             try:
-                return croniter(expr, datetime.fromtimestamp(now)).get_next(datetime).timestamp()
+                return (
+                    croniter(expr, datetime.fromtimestamp(now))
+                    .get_next(datetime)
+                    .timestamp()
+                )
             except (ValueError, KeyError):
                 return 0.0
         return 0.0
 
     def tick(self) -> None:
         """每秒调用一次; 检查并执行到期的任务."""
+        self._maybe_reload_jobs()
         now = time.time()
         remove_ids: list[str] = []
-        for job in self.jobs:
+        with self._jobs_lock:
+            jobs_snapshot = list(self.jobs)
+        for job in jobs_snapshot:
             if not job.enabled or job.next_run_at <= 0 or now < job.next_run_at:
                 continue
             self._run_job(job, now)
             if job.delete_after_run and job.schedule_kind == "at":
                 remove_ids.append(job.id)
         if remove_ids:
-            self.jobs = [j for j in self.jobs if j.id not in remove_ids]
+            with self._jobs_lock:
+                self.jobs = [j for j in self.jobs if j.id not in remove_ids]
+
+    def _emit_output(self, message: str) -> None:
+        with self._queue_lock:
+            self._output_queue.append(message)
+        if self._realtime_emit:
+            try:
+                self._realtime_emit(message)
+            except Exception:
+                pass
 
     def _run_job(self, job: CronJob, now: float) -> None:
         payload = job.payload
@@ -414,7 +521,7 @@ class CronService:
                 else:
                     sys_prompt = (
                         "You are performing a scheduled background task. Be concise. "
-                        f"Current time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                        f"Current time: {shanghai_now().strftime('%Y-%m-%d %H:%M:%S')}"
                     )
                     output = run_agent_single_turn(msg, sys_prompt)
             elif kind == "system_event":
@@ -422,7 +529,11 @@ class CronService:
                 if not output:
                     status = "skipped"
             else:
-                output, status, error = f"[unknown kind: {kind}]", "error", f"unknown kind: {kind}"
+                output, status, error = (
+                    f"[unknown kind: {kind}]",
+                    "error",
+                    f"unknown kind: {kind}",
+                )
         except Exception as exc:
             status, error, output = "error", str(exc), f"[cron error: {exc}]"
 
@@ -431,17 +542,21 @@ class CronService:
             job.consecutive_errors += 1
             if job.consecutive_errors >= CRON_AUTO_DISABLE_THRESHOLD:
                 job.enabled = False
-                msg = (f"Job '{job.name}' auto-disabled after "
-                       f"{job.consecutive_errors} consecutive errors: {error}")
+                msg = (
+                    f"Job '{job.name}' auto-disabled after "
+                    f"{job.consecutive_errors} consecutive errors: {error}"
+                )
                 print(f"{RED}{msg}{RESET}")
-                with self._queue_lock:
-                    self._output_queue.append(msg)
+                self._emit_output(msg)
         else:
             job.consecutive_errors = 0
         job.next_run_at = self._compute_next(job, now)
-        entry = {"job_id": job.id,
-                 "run_at": datetime.fromtimestamp(now, tz=timezone.utc).isoformat(),
-                 "status": status, "output_preview": output[:200]}
+        entry = {
+            "job_id": job.id,
+            "run_at": shanghai_fromtimestamp(now).isoformat(),
+            "status": status,
+            "output_preview": output[:200],
+        }
         if error:
             entry["error"] = error
         try:
@@ -450,8 +565,7 @@ class CronService:
         except OSError:
             pass
         if output and status != "skipped":
-            with self._queue_lock:
-                self._output_queue.append(f"[{job.name}] {output}")
+            self._emit_output(f"[{job.name}] {output}")
 
     def trigger_job(self, job_id: str) -> str:
         for job in self.jobs:
@@ -471,18 +585,33 @@ class CronService:
         result = []
         for j in self.jobs:
             nxt = max(0.0, j.next_run_at - now) if j.next_run_at > 0 else None
-            result.append({
-                "id": j.id, "name": j.name, "enabled": j.enabled,
-                "kind": j.schedule_kind, "errors": j.consecutive_errors,
-                "last_run": datetime.fromtimestamp(j.last_run_at).isoformat() if j.last_run_at > 0 else "never",
-                "next_run": datetime.fromtimestamp(j.next_run_at).isoformat() if j.next_run_at > 0 else "n/a",
-                "next_in": round(nxt) if nxt is not None else None,
-            })
+            result.append(
+                {
+                    "id": j.id,
+                    "name": j.name,
+                    "enabled": j.enabled,
+                    "kind": j.schedule_kind,
+                    "errors": j.consecutive_errors,
+                    "last_run": (
+                        shanghai_fromtimestamp(j.last_run_at).isoformat()
+                        if j.last_run_at > 0
+                        else "never"
+                    ),
+                    "next_run": (
+                        shanghai_fromtimestamp(j.next_run_at).isoformat()
+                        if j.next_run_at > 0
+                        else "n/a"
+                    ),
+                    "next_in": round(nxt) if nxt is not None else None,
+                }
+            )
         return result
+
 
 # ---------------------------------------------------------------------------
 # REPL + Agent 循环
 # ---------------------------------------------------------------------------
+
 
 def print_repl_help() -> None:
     print_info("REPL commands:")
@@ -499,17 +628,29 @@ def agent_loop() -> None:
     lane_lock = threading.Lock()
     soul = SoulSystem(WORKSPACE_DIR)
     memory = MemoryStore(WORKSPACE_DIR)
+    terminal_lock = threading.Lock()
+
+    def print_cron_realtime(message: str) -> None:
+        with terminal_lock:
+            print()
+            print_cron(message)
+            print(colored_prompt(), end="", flush=True)
 
     heartbeat = HeartbeatRunner(
-        workspace=WORKSPACE_DIR, lane_lock=lane_lock,
+        workspace=WORKSPACE_DIR,
+        lane_lock=lane_lock,
         interval=float(os.getenv("HEARTBEAT_INTERVAL", "1800")),
-        active_hours=(int(os.getenv("HEARTBEAT_ACTIVE_START", "9")),
-                      int(os.getenv("HEARTBEAT_ACTIVE_END", "22"))),
+        active_hours=(
+            int(os.getenv("HEARTBEAT_ACTIVE_START", "9")),
+            int(os.getenv("HEARTBEAT_ACTIVE_END", "22")),
+        ),
     )
     cron_svc = CronService(WORKSPACE_DIR / "CRON.json")
+    cron_svc.set_realtime_emitter(print_cron_realtime)
     heartbeat.start()
 
     cron_stop = threading.Event()
+
     def cron_loop() -> None:
         while not cron_stop.is_set():
             try:
@@ -517,6 +658,7 @@ def agent_loop() -> None:
             except Exception:
                 pass
             cron_stop.wait(timeout=1.0)
+
     threading.Thread(target=cron_loop, daemon=True, name="cron-tick").start()
 
     messages: list[dict] = []
@@ -535,7 +677,9 @@ def agent_loop() -> None:
     print_info("=" * 60)
     print_info("  claw0  |  Section 07: Heartbeat & Cron")
     print_info(f"  Model: {MODEL_ID}")
-    print_info(f"  Heartbeat: {'on' if hb_st['enabled'] else 'off'} ({heartbeat.interval}s)")
+    print_info(
+        f"  Heartbeat: {'on' if hb_st['enabled'] else 'off'} ({heartbeat.interval}s)"
+    )
     print_info(f"  Cron jobs: {len(cron_svc.jobs)}")
     print_info("  /help for commands. quit to exit.")
     print_info("=" * 60)
@@ -593,7 +737,9 @@ def agent_loop() -> None:
                 locked = not lane_lock.acquire(blocking=False)
                 if not locked:
                     lane_lock.release()
-                print_info(f"  main_locked: {locked}  heartbeat_running: {heartbeat.running}")
+                print_info(
+                    f"  main_locked: {locked}  heartbeat_running: {heartbeat.running}"
+                )
             else:
                 print(f"{YELLOW}Unknown: {cmd}. /help for commands.{RESET}")
             continue
@@ -605,8 +751,11 @@ def agent_loop() -> None:
             while True:
                 try:
                     response = client.messages.create(
-                        model=MODEL_ID, max_tokens=8096, system=system_prompt,
-                        tools=MEMORY_TOOLS, messages=messages,
+                        model=MODEL_ID,
+                        max_tokens=8096,
+                        system=system_prompt,
+                        tools=MEMORY_TOOLS,
+                        messages=messages,
                     )
                 except Exception as exc:
                     print(f"\n{YELLOW}API Error: {exc}{RESET}\n")
@@ -619,7 +768,9 @@ def agent_loop() -> None:
                 messages.append({"role": "assistant", "content": response.content})
 
                 if response.stop_reason == "end_turn":
-                    text = "".join(b.text for b in response.content if hasattr(b, "text"))
+                    text = "".join(
+                        b.text for b in response.content if hasattr(b, "text")
+                    )
                     if text:
                         print_assistant(text)
                     break
@@ -629,12 +780,19 @@ def agent_loop() -> None:
                         if block.type != "tool_use":
                             continue
                         print_info(f"  [tool: {block.name}]")
-                        results.append({"type": "tool_result", "tool_use_id": block.id,
-                                        "content": handle_tool(block.name, block.input)})
+                        results.append(
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": block.id,
+                                "content": handle_tool(block.name, block.input),
+                            }
+                        )
                     messages.append({"role": "user", "content": results})
                 else:
                     print_info(f"[stop_reason={response.stop_reason}]")
-                    text = "".join(b.text for b in response.content if hasattr(b, "text"))
+                    text = "".join(
+                        b.text for b in response.content if hasattr(b, "text")
+                    )
                     if text:
                         print_assistant(text)
                     break
@@ -644,9 +802,11 @@ def agent_loop() -> None:
     heartbeat.stop()
     cron_stop.set()
 
+
 # ---------------------------------------------------------------------------
 # 入口
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     if not os.getenv("ANTHROPIC_API_KEY"):
@@ -654,6 +814,7 @@ def main() -> None:
         print(f"{DIM}Copy .env.example to .env and fill in your key.{RESET}")
         sys.exit(1)
     agent_loop()
+
 
 if __name__ == "__main__":
     main()
